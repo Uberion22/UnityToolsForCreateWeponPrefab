@@ -3,18 +3,29 @@ using System;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Windows;
+
+public enum TabType
+{
+    Data = 0,
+    Geometry = 1,
+    Skin = 2
+}
 
 public class WeaponWizardWindow : EditorWindow
 {
-    public WeaponData newWeapon;
-    protected SerializedObject serializedObject;
-    protected SerializedProperty serializedProperty;
+    private readonly string PrefabsDirectory = "Assets/Prefabs/";
+    private readonly string MaterialSuffix = ".mat";
+    private readonly string AssetSuffix = ".asset";
+    private readonly string EnterNameHelpString = "Please enter weapon name";
+    private readonly string NameNotAvailableHelpString = "This name is already in use, please enter another one";
+    private readonly string GeometryPropertyFieldName = "Geometry";
+    private WeaponData _newWeapon;
+    private SerializedObject _serializedObject;
+    private SerializedProperty _serializedProperty;
     private WeaponData[] _weapons;
-    private bool _textureNotEmpty;
-    private bool _objectsSaved;
-    private int _currentTab;
-    private bool _meshNotEmpty;
+    private bool _textureIsEmpty = true;
+    private bool _meshIsEmpty = true;
+    private TabType _currentTab;
     private string _objectName;
     private string _currentHelpString;
     private Editor _gameObjectEditor;
@@ -22,57 +33,31 @@ public class WeaponWizardWindow : EditorWindow
     private Texture _addedTexture;
     private Mesh _addedMesh;
     private Material _currentMaterial;
-    private readonly string _prefabsDirectory = "Assets/Prefabs/";
-    private readonly string _prefabSuffix = ".prefab";
-    private readonly string _materialSuffix = ".mat";
-    private readonly string _assetSuffix = ".asset";
-    private readonly string _enterNameHelpString = "Please enter weapon name";
-    private readonly string _nameNotAvailableHelpString = "This name is already in use, please enter another one";
 
-    [UnityEditor.MenuItem("Tools/Weapon Wizard")]
+    [MenuItem("Tools/Weapon Wizard")]
     public static WeaponWizardWindow ShowWindow()
     {
         WeaponWizardWindow window = GetWindow<WeaponWizardWindow>();
         window.titleContent = new GUIContent("Weapon Wizard");
         window.minSize = new Vector2(400, 400);
+        
         return window;
     }
 
     private void Awake()
     {
-        _currentHelpString = _enterNameHelpString;
+        _currentHelpString = EnterNameHelpString;
     }
 
     private void OnGUI()
     {
-        if (newWeapon == null)
+        if (_newWeapon == null)
         {
             DrawFirstStepCreateWeaponGroup();
         }
         else
         {
-            _currentTab = GUILayout.Toolbar(_currentTab, new string[] { "Data", "Geometry", "Skin" });
-            switch (_currentTab)
-            {
-                case 0:
-                    {
-                        DrawDataPropertyGroup();
-                        break;
-                    }
-                case 1:
-                    {
-                        DrawGeometryTabGroup();
-                        break;
-                    }
-                case 2:
-                    {
-                        DrawSkinTabGroup();
-                        break;
-                    }
-            }
-
-            DrawViewWindow(_currentTab);
-            DrawSaveButtonGroup(_currentTab);
+            DrawTabsGroup();
         }
     }
 
@@ -80,12 +65,9 @@ public class WeaponWizardWindow : EditorWindow
 
     private void DrawFirstStepCreateWeaponGroup()
     {
-        EditorGUILayout.BeginHorizontal();
         EditorGUILayout.HelpBox(_currentHelpString, MessageType.Info);
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.BeginHorizontal();
         _objectName = GUILayout.TextField(_objectName);
-        EditorGUILayout.EndHorizontal();
+       
         if (GUILayout.Button("Create weapon") && NameAvailable(_objectName))
         {
             CreateNewWeaponData();
@@ -93,80 +75,116 @@ public class WeaponWizardWindow : EditorWindow
         }
     }
 
+    private void DrawTabsGroup()
+    {
+        _currentTab = (TabType)GUILayout.Toolbar((int)_currentTab, new string[] { "Data", "Geometry", "Skin" });
+        switch (_currentTab)
+        {
+            case TabType.Data:
+            {
+                DrawDataPropertyGroup();
+                break;
+            }
+            case TabType.Geometry:
+            {
+                DrawGeometryTabGroup();
+                break;
+            }
+            case TabType.Skin:
+            {
+                DrawSkinTabGroup();
+                break;
+            }
+        }
+
+        DrawViewWindow();
+        DrawSaveButtonGroup();
+    }
+
     private void DrawDataPropertyGroup()
     {
         EditorGUILayout.HelpBox("Please enter weapon data", MessageType.Info);
-        serializedProperty = serializedObject.GetIterator();
-        serializedProperty.NextVisible(true);
-        DrawProperties(serializedProperty);
+        _serializedProperty = _serializedObject.GetIterator();
+        _serializedProperty.NextVisible(true);
+        DrawProperties(_serializedProperty);
     }
 
     private void DrawGeometryTabGroup()
     {
         EditorGUILayout.HelpBox("Please select weapon mesh", MessageType.Info);
+        
         EditorGUI.BeginChangeCheck();
         _addedMesh = (Mesh)EditorGUILayout.ObjectField(_addedMesh, typeof(Mesh),false);
+        
         if (EditorGUI.EndChangeCheck())
         {
-            newWeapon.geometry.GetComponent<MeshFilter>().mesh = _addedMesh;
-            _meshNotEmpty = _addedMesh != null;
-            SaveAndUpdateAssets();
+            _newWeapon.geometry.GetComponent<MeshFilter>().mesh = _addedMesh;
+            _meshIsEmpty = _addedMesh == null;
+            SaveAndUpdate();
         }
     }
 
     private void DrawSkinTabGroup()
     {
         EditorGUILayout.HelpBox("Please select weapon texture", MessageType.Info);
+        
         EditorGUI.BeginChangeCheck();
-        EditorGUI.BeginDisabledGroup(!_meshNotEmpty);
+        
+        EditorGUI.BeginDisabledGroup(_meshIsEmpty);
         _addedTexture = (Texture)EditorGUILayout.ObjectField(_addedTexture, typeof(Texture), false);
         EditorGUI.EndDisabledGroup();
+        
         if (EditorGUI.EndChangeCheck())
         {
-            var currentRender = newWeapon.geometry.GetComponent<Renderer>();
+            var currentRender = _newWeapon.geometry.GetComponent<Renderer>();
             currentRender.sharedMaterial = _currentMaterial;
             currentRender.sharedMaterial.SetTexture("_MainTex", _addedTexture);
-            ;
-            _textureNotEmpty = _addedTexture != null;
-            SaveAndUpdateAssets();
+            _textureIsEmpty = _addedTexture == null;
+            SaveAndUpdate();
         }
     }
 
-    private void DrawSaveButtonGroup(int tabNumber)
+    private void DrawSaveButtonGroup()
     {
-        EditorGUI.BeginDisabledGroup(!_meshNotEmpty || !_textureNotEmpty);
-        if (tabNumber == 2 && GUILayout.Button("Save"))
+        EditorGUI.BeginDisabledGroup(_meshIsEmpty || _textureIsEmpty);
+        
+        if (_currentTab == TabType.Skin && GUILayout.Button("Save"))
         {
-            //CreateAssetAtPath<WeaponData>(newWeapon, newWeapon.name + _assetSuffix, _assetPath);
-            serializedObject.ApplyModifiedProperties();
-            SaveAndUpdateAssets();
+            _serializedObject.ApplyModifiedProperties();
+            SaveAndUpdate();
             Close();
         }
 
         EditorGUI.EndDisabledGroup();
     }
 
-    private void DrawViewWindow(int tabNumber)
+    private void DrawViewWindow()
     {
         GUILayout.Space(30);
-        if (newWeapon.geometry == null || (tabNumber == 0)) return;
+
+        if (_newWeapon.geometry == null || _currentTab == TabType.Data) return;
 
         if (_gameObjectEditor == null)
         {
-            _gameObjectEditor = Editor.CreateEditor(newWeapon.geometry);
+            _gameObjectEditor = Editor.CreateEditor(_newWeapon.geometry);
         }
 
         _gameObjectEditor.OnInteractivePreviewGUI(GUILayoutUtility.GetRect(256, 300), GUIStyle.none);
     }
 
-    protected void DrawProperties(SerializedProperty p)
+    protected void DrawProperties(SerializedProperty property)
     {
         EditorGUI.BeginDisabledGroup(true);
-        EditorGUILayout.PropertyField(serializedProperty);
+        EditorGUILayout.PropertyField(_serializedProperty);
         EditorGUI.EndDisabledGroup();
-        while (p.NextVisible(false))
+        
+        while (property.NextVisible(false))
         {
-            EditorGUILayout.PropertyField(p, true);
+            var disabled = property.displayName == GeometryPropertyFieldName;
+            
+            EditorGUI.BeginDisabledGroup(disabled);
+            EditorGUILayout.PropertyField(property, true);
+            EditorGUI.EndDisabledGroup();
         }
     }
 
@@ -174,76 +192,28 @@ public class WeaponWizardWindow : EditorWindow
 
     #region Create and save methods
 
-    private void CreateDirectoryFoldersByPathIfNotExists(string directoryPath)
-    {
-        var foldersToCreate = directoryPath.Split('/');
-        var allCurrentDirectory = foldersToCreate.FirstOrDefault();
-        for (int i = 0; i < foldersToCreate.Length - 1; i++)
-        {
-            var currentPath = allCurrentDirectory + "/" + foldersToCreate[i + 1];
-            if (!Directory.Exists(currentPath))
-            {
-                AssetDatabase.CreateFolder(allCurrentDirectory, foldersToCreate[i + 1]);
-            }
-
-            allCurrentDirectory = currentPath;
-        }
-    }
-
-    private GameObject CreatePrefabAtDirectory(GameObject gameObject, string directoryPath)
-    {
-        CreateDirectoryFoldersByPathIfNotExists(directoryPath);
-        string localPath = directoryPath + "/" + gameObject.name +  _prefabSuffix;
-        localPath = AssetDatabase.GenerateUniqueAssetPath(localPath);
-
-        var savedPrefab = PrefabUtility.SaveAsPrefabAssetAndConnect(gameObject, localPath, InteractionMode.UserAction,
-            out var prefabSuccess);
-        if (prefabSuccess)
-        {
-            Debug.Log("Prefab was saved successfully");
-            DestroyImmediate(gameObject);
-        }
-        else
-        {
-            Debug.Log("Prefab failed to save");
-        }
-
-        return savedPrefab;
-    }
-
     private void CreateMaterial()
     {
         Material material = new Material(Shader.Find("Specular"));
-        var materialName = newWeapon.geometry.name + _materialSuffix;
-        _currentMaterial = CreateAssetAtPath<Material>(material, materialName, _assetPath);
+        var materialName = _newWeapon.geometry.name + MaterialSuffix;
+        _currentMaterial = AssetsUtility.CreateAssetAtPath<Material>(material, materialName, _assetPath);
     }
 
     private void CreateNewWeaponData()
     {
-        newWeapon = new WeaponData();
-        newWeapon.name = _objectName;
+        _newWeapon = new WeaponData {name = _objectName};
         var geometry = new GameObject(_objectName);
         geometry.AddComponent<MeshFilter>();
         geometry.AddComponent<MeshRenderer>();
-        _assetPath = _prefabsDirectory + geometry.name;
-        newWeapon.geometry = CreatePrefabAtDirectory(geometry, _assetPath);
-        serializedObject = new SerializedObject(newWeapon);
-        CreateAssetAtPath<WeaponData>(newWeapon, newWeapon.name + _assetSuffix, _assetPath);
+        _assetPath = PrefabsDirectory + geometry.name;
+        _newWeapon.geometry = AssetsUtility.CreatePrefabAtDirectory(geometry, _assetPath);
+        _serializedObject = new SerializedObject(_newWeapon);
+        AssetsUtility.CreateAssetAtPath<WeaponData>(_newWeapon, _newWeapon.name + AssetSuffix, _assetPath);
     }
 
-    private T CreateAssetAtPath<T>(T asset, string assetName, string assetFolderPath) where T : UnityEngine.Object
+    private void SaveAndUpdate()
     {
-        CreateDirectoryFoldersByPathIfNotExists(assetFolderPath);
-        var assetPath = assetFolderPath + "/" + assetName;
-        AssetDatabase.CreateAsset(asset, assetPath);
-        Debug.Log(AssetDatabase.GetAssetPath(asset));
-
-        return AssetDatabase.LoadAssetAtPath<T>(assetPath);
-    }
-
-    private void SaveAndUpdateAssets()
-    {
-        serializedObject.ApplyModifiedProperties();
+        _serializedObject.ApplyModifiedProperties();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
     }
@@ -255,18 +225,19 @@ public class WeaponWizardWindow : EditorWindow
     private bool NameAvailable(string newWeaponName)
     {
         _weapons = GetAllInstances<WeaponData>();
-        bool nameIsAvailable = !String.IsNullOrEmpty(_objectName) && _weapons.All(weapon => weapon.name != newWeaponName);
-        _currentHelpString = nameIsAvailable ? _enterNameHelpString : _nameNotAvailableHelpString;
+        var nameIsAvailable = !String.IsNullOrEmpty(_objectName) && _weapons.All(weapon => weapon.name != newWeaponName);
+        _currentHelpString = nameIsAvailable ? EnterNameHelpString : NameNotAvailableHelpString;
+        
         return nameIsAvailable;
     }
 
     public static T[] GetAllInstances<T>() where T : WeaponData
     {
-        string[] guids = AssetDatabase.FindAssets("t:" + typeof(T).Name);
+        var guids = AssetDatabase.FindAssets("t:" + typeof(T).Name);
         T[] assets = new T[guids.Length];
-        for (int i = 0; i < assets.Length; i++)
+        for (var i = 0; i < assets.Length; i++)
         {
-            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            var path = AssetDatabase.GUIDToAssetPath(guids[i]);
             assets[i] = AssetDatabase.LoadAssetAtPath<T>(path);
         }
 
