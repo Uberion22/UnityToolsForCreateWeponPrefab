@@ -121,6 +121,7 @@ public class WeaponWizardWindow : EditorWindow
             _newWeapon.geometry.GetComponent<MeshFilter>().mesh = _addedMesh;
             _meshIsEmpty = _addedMesh == null;
             SaveAndUpdate();
+            _gameObjectEditor?.ReloadPreviewInstances();
         }
     }
 
@@ -140,6 +141,7 @@ public class WeaponWizardWindow : EditorWindow
             currentRender.sharedMaterial = _currentMaterial;
             currentRender.sharedMaterial.SetTexture("_MainTex", _addedTexture);
             _textureIsEmpty = _addedTexture == null;
+            _gameObjectEditor?.ReloadPreviewInstances();
             SaveAndUpdate();
         }
     }
@@ -168,8 +170,7 @@ public class WeaponWizardWindow : EditorWindow
         {
             _gameObjectEditor = Editor.CreateEditor(_newWeapon.geometry);
         }
-
-        _gameObjectEditor.OnInteractivePreviewGUI(GUILayoutUtility.GetRect(256, 300), GUIStyle.none);
+        _gameObjectEditor.OnInteractivePreviewGUI(GUILayoutUtility.GetRect(256, 300),GUIStyle.none);
     }
 
     protected void DrawProperties(SerializedProperty property)
@@ -177,7 +178,6 @@ public class WeaponWizardWindow : EditorWindow
         EditorGUI.BeginDisabledGroup(true);
         EditorGUILayout.PropertyField(_serializedProperty);
         EditorGUI.EndDisabledGroup();
-        
         while (property.NextVisible(false))
         {
             var disabled = property.displayName == GeometryPropertyFieldName;
@@ -201,7 +201,8 @@ public class WeaponWizardWindow : EditorWindow
 
     private void CreateNewWeaponData()
     {
-        _newWeapon = new WeaponData {name = _objectName};
+        _newWeapon = ScriptableObject.CreateInstance<WeaponData>();
+        _newWeapon.name = _objectName;
         var geometry = new GameObject(_objectName);
         geometry.AddComponent<MeshFilter>();
         geometry.AddComponent<MeshRenderer>();
