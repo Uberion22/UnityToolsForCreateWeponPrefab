@@ -5,106 +5,42 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Windows;
 
-public class CreateWeaponWindow : EditorWindow
+public class WeaponWizardWindow : EditorWindow
 {
     public WeaponData newWeapon;
     protected SerializedObject serializedObject;
     protected SerializedProperty serializedProperty;
     private WeaponData[] _weapons;
     private bool _textureNotEmpty;
+    private bool _objectsSaved;
     private int _currentTab;
     private bool _meshNotEmpty;
     private string _objectName;
+    private string _currentHelpString;
     private Editor _gameObjectEditor;
     private string _assetPath;
     private Texture _addedTexture;
     private Mesh _addedMesh;
     private Material _currentMaterial;
-
-
     private readonly string _prefabsDirectory = "Assets/Prefabs/";
-
-    //private readonly string _materialsPath = "Assets/Prefabs/Materials/";
     private readonly string _prefabSuffix = ".prefab";
     private readonly string _materialSuffix = ".mat";
     private readonly string _assetSuffix = ".asset";
+    private readonly string _enterNameHelpString = "Please enter weapon name";
+    private readonly string _nameNotAvailableHelpString = "This name is already in use, please enter another one";
 
-    [UnityEditor.MenuItem("GameObject/CreateWeapon!!!")]
-    public static CreateWeaponWindow ShowWindow()
+    [UnityEditor.MenuItem("Tools/Weapon Wizard")]
+    public static WeaponWizardWindow ShowWindow()
     {
-        CreateWeaponWindow window = GetWindow<CreateWeaponWindow>();
+        WeaponWizardWindow window = GetWindow<WeaponWizardWindow>();
         window.titleContent = new GUIContent("Weapon Wizard");
         window.minSize = new Vector2(400, 400);
         return window;
     }
 
-    private void CreateDirectoryFoldersByPathIfNotExists(string directoryPath)
+    private void Awake()
     {
-        var foldersToCreate = directoryPath.Split('/');
-        var allCurrentDirectory = foldersToCreate.FirstOrDefault();
-        for (int i = 0; i < foldersToCreate.Length - 1; i++)
-        {
-            var currentPath = allCurrentDirectory + "/" + foldersToCreate[i + 1];
-            if (!Directory.Exists(currentPath))
-            {
-                AssetDatabase.CreateFolder(allCurrentDirectory, foldersToCreate[i + 1]);
-            }
-
-            allCurrentDirectory = currentPath;
-        }
-    }
-
-    private GameObject CreatePrefabAtDirectory(GameObject gameObject, string directoryPath, string suffix = null)
-    {
-        CreateDirectoryFoldersByPathIfNotExists(directoryPath);
-        string localPath = directoryPath + "/" + gameObject.name + (suffix ?? _prefabSuffix);
-        localPath = AssetDatabase.GenerateUniqueAssetPath(localPath);
-
-        var savedPrefab = PrefabUtility.SaveAsPrefabAssetAndConnect(gameObject, localPath, InteractionMode.UserAction,
-            out var prefabSuccess);
-        if (prefabSuccess)
-        {
-            Debug.Log("Prefab was saved successfully");
-            DestroyImmediate(gameObject);
-        }
-        else
-        {
-            Debug.Log("Prefab failed to save");
-        }
-
-        return savedPrefab;
-    }
-
-    private bool NameAvailable(string newWeaponName)
-    {
-        _weapons = GetAllInstances<WeaponData>();
-        return !String.IsNullOrEmpty(_objectName) && _weapons.All(weapon => weapon.name != newWeaponName);
-    }
-
-    private void SaveAndUpdateAssets()
-    {
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-    }
-
-    private void CreateMaterial()
-    {
-        Material material = new Material(Shader.Find("Specular"));
-        var materialName = newWeapon.geometry.name + _materialSuffix;
-        _currentMaterial = CreateAssetAtPath<Material>(material, materialName, _assetPath);
-    }
-
-    private void CreateNewWeaponData()
-    {
-        newWeapon = new WeaponData();
-        newWeapon.name = _objectName;
-        var geometry = new GameObject(_objectName);
-        geometry.AddComponent<MeshFilter>();
-        geometry.AddComponent<MeshRenderer>();
-        _assetPath = _prefabsDirectory + geometry.name;
-        newWeapon.geometry = CreatePrefabAtDirectory(geometry, _assetPath);
-        serializedObject = new SerializedObject(newWeapon);
-        //serializedProperty = serializedObject.GetIterator();
+        _currentHelpString = _enterNameHelpString;
     }
 
     private void OnGUI()
@@ -115,24 +51,24 @@ public class CreateWeaponWindow : EditorWindow
         }
         else
         {
-            _currentTab = GUILayout.Toolbar(_currentTab, new string[] {"Data", "Geometry", "Skin"});
+            _currentTab = GUILayout.Toolbar(_currentTab, new string[] { "Data", "Geometry", "Skin" });
             switch (_currentTab)
             {
                 case 0:
-                {
-                    DrawDataPropertyGroup();
-                    break;
-                }
+                    {
+                        DrawDataPropertyGroup();
+                        break;
+                    }
                 case 1:
-                {
-                    DrawGeometryTabGroup();
-                    break;
-                }
+                    {
+                        DrawGeometryTabGroup();
+                        break;
+                    }
                 case 2:
-                {
-                    DrawSkinTabGroup();
-                    break;
-                }
+                    {
+                        DrawSkinTabGroup();
+                        break;
+                    }
             }
 
             DrawViewWindow(_currentTab);
@@ -140,10 +76,12 @@ public class CreateWeaponWindow : EditorWindow
         }
     }
 
+    #region Draw interfase and window wethods
+
     private void DrawFirstStepCreateWeaponGroup()
     {
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.HelpBox("Please enter weapon name", MessageType.Info);
+        EditorGUILayout.HelpBox(_currentHelpString, MessageType.Info);
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.BeginHorizontal();
         _objectName = GUILayout.TextField(_objectName);
@@ -167,7 +105,7 @@ public class CreateWeaponWindow : EditorWindow
     {
         EditorGUILayout.HelpBox("Please select weapon mesh", MessageType.Info);
         EditorGUI.BeginChangeCheck();
-        _addedMesh = (Mesh) EditorGUILayout.ObjectField(_addedMesh, typeof(Mesh));
+        _addedMesh = (Mesh)EditorGUILayout.ObjectField(_addedMesh, typeof(Mesh),false);
         if (EditorGUI.EndChangeCheck())
         {
             newWeapon.geometry.GetComponent<MeshFilter>().mesh = _addedMesh;
@@ -181,7 +119,7 @@ public class CreateWeaponWindow : EditorWindow
         EditorGUILayout.HelpBox("Please select weapon texture", MessageType.Info);
         EditorGUI.BeginChangeCheck();
         EditorGUI.BeginDisabledGroup(!_meshNotEmpty);
-        _addedTexture = (Texture) EditorGUILayout.ObjectField(_addedTexture, typeof(Texture), false);
+        _addedTexture = (Texture)EditorGUILayout.ObjectField(_addedTexture, typeof(Texture), false);
         EditorGUI.EndDisabledGroup();
         if (EditorGUI.EndChangeCheck())
         {
@@ -197,10 +135,12 @@ public class CreateWeaponWindow : EditorWindow
     private void DrawSaveButtonGroup(int tabNumber)
     {
         EditorGUI.BeginDisabledGroup(!_meshNotEmpty || !_textureNotEmpty);
-        if (tabNumber == 2 && _addedMesh != null && GUILayout.Button("Save"))
+        if (tabNumber == 2 && GUILayout.Button("Save"))
         {
-            CreateAssetAtPath<WeaponData>(newWeapon, newWeapon.name + _assetSuffix, _assetPath);
+            //CreateAssetAtPath<WeaponData>(newWeapon, newWeapon.name + _assetSuffix, _assetPath);
             serializedObject.ApplyModifiedProperties();
+            SaveAndUpdateAssets();
+            Close();
         }
 
         EditorGUI.EndDisabledGroup();
@@ -219,6 +159,78 @@ public class CreateWeaponWindow : EditorWindow
         _gameObjectEditor.OnInteractivePreviewGUI(GUILayoutUtility.GetRect(256, 300), GUIStyle.none);
     }
 
+    protected void DrawProperties(SerializedProperty p)
+    {
+        EditorGUI.BeginDisabledGroup(true);
+        EditorGUILayout.PropertyField(serializedProperty);
+        EditorGUI.EndDisabledGroup();
+        while (p.NextVisible(false))
+        {
+            EditorGUILayout.PropertyField(p, true);
+        }
+    }
+
+    #endregion
+
+    #region Create and save methods
+
+    private void CreateDirectoryFoldersByPathIfNotExists(string directoryPath)
+    {
+        var foldersToCreate = directoryPath.Split('/');
+        var allCurrentDirectory = foldersToCreate.FirstOrDefault();
+        for (int i = 0; i < foldersToCreate.Length - 1; i++)
+        {
+            var currentPath = allCurrentDirectory + "/" + foldersToCreate[i + 1];
+            if (!Directory.Exists(currentPath))
+            {
+                AssetDatabase.CreateFolder(allCurrentDirectory, foldersToCreate[i + 1]);
+            }
+
+            allCurrentDirectory = currentPath;
+        }
+    }
+
+    private GameObject CreatePrefabAtDirectory(GameObject gameObject, string directoryPath)
+    {
+        CreateDirectoryFoldersByPathIfNotExists(directoryPath);
+        string localPath = directoryPath + "/" + gameObject.name +  _prefabSuffix;
+        localPath = AssetDatabase.GenerateUniqueAssetPath(localPath);
+
+        var savedPrefab = PrefabUtility.SaveAsPrefabAssetAndConnect(gameObject, localPath, InteractionMode.UserAction,
+            out var prefabSuccess);
+        if (prefabSuccess)
+        {
+            Debug.Log("Prefab was saved successfully");
+            DestroyImmediate(gameObject);
+        }
+        else
+        {
+            Debug.Log("Prefab failed to save");
+        }
+
+        return savedPrefab;
+    }
+
+    private void CreateMaterial()
+    {
+        Material material = new Material(Shader.Find("Specular"));
+        var materialName = newWeapon.geometry.name + _materialSuffix;
+        _currentMaterial = CreateAssetAtPath<Material>(material, materialName, _assetPath);
+    }
+
+    private void CreateNewWeaponData()
+    {
+        newWeapon = new WeaponData();
+        newWeapon.name = _objectName;
+        var geometry = new GameObject(_objectName);
+        geometry.AddComponent<MeshFilter>();
+        geometry.AddComponent<MeshRenderer>();
+        _assetPath = _prefabsDirectory + geometry.name;
+        newWeapon.geometry = CreatePrefabAtDirectory(geometry, _assetPath);
+        serializedObject = new SerializedObject(newWeapon);
+        CreateAssetAtPath<WeaponData>(newWeapon, newWeapon.name + _assetSuffix, _assetPath);
+    }
+
     private T CreateAssetAtPath<T>(T asset, string assetName, string assetFolderPath) where T : UnityEngine.Object
     {
         CreateDirectoryFoldersByPathIfNotExists(assetFolderPath);
@@ -229,15 +241,23 @@ public class CreateWeaponWindow : EditorWindow
         return AssetDatabase.LoadAssetAtPath<T>(assetPath);
     }
 
-    protected void DrawProperties(SerializedProperty p)
+    private void SaveAndUpdateAssets()
     {
-        EditorGUI.BeginDisabledGroup(true);
-        EditorGUILayout.PropertyField(serializedProperty);
-        EditorGUI.EndDisabledGroup();
-        while (p.NextVisible(false))
-        {
-            EditorGUILayout.PropertyField(p, true);
-        }
+        serializedObject.ApplyModifiedProperties();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+    }
+
+    #endregion
+
+    #region Other methods
+
+    private bool NameAvailable(string newWeaponName)
+    {
+        _weapons = GetAllInstances<WeaponData>();
+        bool nameIsAvailable = !String.IsNullOrEmpty(_objectName) && _weapons.All(weapon => weapon.name != newWeaponName);
+        _currentHelpString = nameIsAvailable ? _enterNameHelpString : _nameNotAvailableHelpString;
+        return nameIsAvailable;
     }
 
     public static T[] GetAllInstances<T>() where T : WeaponData
@@ -252,4 +272,6 @@ public class CreateWeaponWindow : EditorWindow
 
         return assets;
     }
+
+    #endregion
 }
